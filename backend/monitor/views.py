@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from datetime import timedelta
+from datetime import timedelta, timezone as dt_timezone
 from decimal import Decimal
 import math
 
@@ -65,7 +65,7 @@ def dashboard(request):
     current_equity = sum(number(row['equity']) for row in by_account.values())
     latest_capture = rows[-1]['captured_at']
     if latest_capture.tzinfo is None:
-        latest_capture = latest_capture.replace(tzinfo=timezone.utc)
+        latest_capture = latest_capture.replace(tzinfo=dt_timezone.utc)
     snapshot_age = max(0, int((timezone.now() - latest_capture).total_seconds()))
     initial_by_account = OrderedDict()
     for row in rows:
