@@ -1,0 +1,9 @@
+{
+  "poll_interval_seconds": 60,
+  "mt5_terminals": [
+    {"name": "Cuenta 1", "terminal_path": "C:\\Program Files\\MetaTrader 5 Cuenta 1\\terminal64.exe", "portable": false},
+    {"name": "Cuenta 2", "terminal_path": "C:\\Program Files\\MetaTrader 5 Cuenta 2\\terminal64.exe", "portable": false},
+    {"name": "Cuenta 3", "terminal_path": "C:\\Program Files\\MetaTrader 5 Cuenta 3\\terminal64.exe", "portable": false}
+  ],
+  "database": {"type": "sqlite", "path": "data/mt5_capture.sqlite3"}
+}

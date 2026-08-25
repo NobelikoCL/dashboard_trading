@@ -1,0 +1,1 @@
+.metrics{grid-template-columns:repeat(3,1fr)}.baseline-card{border-color:#46617a}.baseline-card .metric-note{color:#8aa6bd}@media(max-width:1000px){.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.metrics{grid-template-columns:1fr}}
