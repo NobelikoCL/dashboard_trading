@@ -56,13 +56,17 @@ def dashboard(request):
         return JsonResponse({'error': 'No se pudo consultar account_snapshots', 'detail': str(error)}, status=503)
 
     if not rows:
-        return JsonResponse({'summary': empty_summary(), 'curve': [], 'accounts': [], 'period': period})
+        return JsonResponse({'summary': empty_summary(), 'curve': [], 'curve_labels': [], 'account_curves': [], 'alerts': [{'level': 'critical', 'title': 'Sin datos', 'detail': 'No existen snapshots en el periodo seleccionado'}], 'accounts': [], 'period': period})
 
     by_account = OrderedDict()
     for row in rows:
         by_account[row['account_login']] = row
     equities = [number(row['equity']) for row in rows]
     current_equity = sum(number(row['equity']) for row in by_account.values())
+    latest_capture = rows[-1]['captured_at']
+    if latest_capture.tzinfo is None:
+        latest_capture = latest_capture.replace(tzinfo=timezone.utc)
+    snapshot_age = max(0, int((timezone.now() - latest_capture).total_seconds()))
     initial_by_account = OrderedDict()
     for row in rows:
         initial_by_account.setdefault(row['account_login'], number(row['equity']))
@@ -87,12 +91,18 @@ def dashboard(request):
     average = sum(returns) / len(returns) if returns else 0
     deviation = math.sqrt(sum((x - average) ** 2 for x in returns) / len(returns)) if returns else 0
     accounts = []
+    alerts = []
     for key, row in by_account.items():
         account_equities = [number(x['equity']) for x in rows if x['account_login'] == key]
         account_peak = max(account_equities) or number(row['equity'])
         account_dd = max(0, (account_peak - number(row['equity'])) / account_peak * 100) if account_peak else 0
         account_initial = baselines.get(key, account_equities[0] if account_equities else number(row['equity']))
         account_profit = number(row['equity']) - account_initial
+        stale = snapshot_age > 120
+        if stale:
+            alerts.append({'level': 'critical', 'title': 'Datos desactualizados', 'detail': f"{row['terminal_name'] or key} no actualiza desde hace {snapshot_age // 60} min"})
+        if account_dd > 8:
+            alerts.append({'level': 'warning', 'title': 'Drawdown elevado', 'detail': f"{row['terminal_name'] or key} alcanza {account_dd:.2f}%"})
         accounts.append({'account_login': key, 'name': row['account_name'] or f"Account {row['account_login']}",
                          'login': f"... {str(row['account_login'])[-4:]}",
                          'strategy': row['terminal_name'] or 'Estrategia no definida',
@@ -100,7 +110,7 @@ def dashboard(request):
                          'balance': number(row['balance']), 'profit_loss': account_profit,
                          'return_percent': (account_profit / account_initial * 100) if account_initial else 0,
                          'day': 0, 'dd': account_dd, 'dd_amount': max(0, account_peak - number(row['equity'])),
-                         'exposure': None, 'status': 'watch' if account_dd > 8 else 'healthy',
+                         'exposure': None, 'stale': stale, 'status': 'stale' if stale else ('watch' if account_dd > 8 else 'healthy'),
                          'positions': row['open_positions']})
     for account in accounts:
         account_rows = [x for x in rows if f"... {str(x['account_login'])[-4:]}" == account['login']]
@@ -108,7 +118,7 @@ def dashboard(request):
             account['day'] = (number(account_rows[-1]['equity']) / number(account_rows[-2]['equity']) - 1) * 100
     equity_change = (current_equity / initial_equity - 1) * 100
     cumulative_percent = (cumulative_profit / baseline_total * 100) if baseline_total else 0
-    return JsonResponse({'summary': {'equity': round(current_equity, 2), 'balance': round(sum(number(row['balance']) for row in by_account.values()), 2), 'initial_balance_total': round(baseline_total, 2), 'equity_change': round(equity_change, 2), 'cumulative_profit': round(cumulative_profit, 2), 'cumulative_percent': round(cumulative_percent, 2), 'profit_percent': round(max(equity_change, 0), 2), 'loss_percent': round(min(equity_change, 0), 2), 'absolute_drawdown': round(absolute_dd, 2), 'max_drawdown': round(max_dd, 2), 'win_rate': round(win_rate, 2), 'profit_factor': round(gains / losses if losses else 0, 2), 'open_positions': sum(x['open_positions'] for x in by_account.values()), 'accounts': len(by_account), 'sharpe': round((average / deviation * math.sqrt(252)) if deviation else 0, 2), 'exposure_available': False, 'latest_capture': rows[-1]['captured_at'].isoformat()}, 'curve': curve, 'curve_labels': curve_labels, 'account_curves': account_curves, 'accounts': accounts, 'period': period})
+    return JsonResponse({'summary': {'equity': round(current_equity, 2), 'balance': round(sum(number(row['balance']) for row in by_account.values()), 2), 'initial_balance_total': round(baseline_total, 2), 'equity_change': round(equity_change, 2), 'cumulative_profit': round(cumulative_profit, 2), 'cumulative_percent': round(cumulative_percent, 2), 'profit_percent': round(max(equity_change, 0), 2), 'loss_percent': round(min(equity_change, 0), 2), 'absolute_drawdown': round(absolute_dd, 2), 'max_drawdown': round(max_dd, 2), 'win_rate': round(win_rate, 2), 'profit_factor': round(gains / losses if losses else 0, 2), 'open_positions': sum(x['open_positions'] for x in by_account.values()), 'accounts': len(by_account), 'sharpe': round((average / deviation * math.sqrt(252)) if deviation else 0, 2), 'exposure_available': False, 'latest_capture': rows[-1]['captured_at'].isoformat(), 'snapshot_age_seconds': snapshot_age, 'data_status': 'stale' if snapshot_age > 120 else 'live'}, 'curve': curve, 'curve_labels': curve_labels, 'account_curves': account_curves, 'alerts': alerts, 'accounts': accounts, 'period': period})
 
 
 def portfolio_curve(rows, days):

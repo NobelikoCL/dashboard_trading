@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS account_snapshots (
     id BIGINT PRIMARY KEY, account_login BIGINT NOT NULL, server TEXT NOT NULL,
     broker TEXT, account_name TEXT, balance NUMERIC NOT NULL, equity NUMERIC NOT NULL,
     open_positions INTEGER NOT NULL, captured_at TIMESTAMP NOT NULL, terminal_name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS position_snapshots (
+    id BIGINT PRIMARY KEY, account_login BIGINT NOT NULL, symbol TEXT NOT NULL,
+    position_type INTEGER NOT NULL, volume NUMERIC NOT NULL, price_open NUMERIC,
+    price_current NUMERIC, profit NUMERIC, margin NUMERIC, stop_loss NUMERIC,
+    take_profit NUMERIC, captured_at TIMESTAMP NOT NULL, terminal_name TEXT NOT NULL
 )
 """
 
@@ -38,7 +44,7 @@ class Database:
             path.parent.mkdir(parents=True, exist_ok=True)
             self.connection = sqlite3.connect(path)
             schema = SCHEMA.replace("BIGINT", "INTEGER").replace("NUMERIC", "REAL")
-            self.connection.execute(schema)
+            self.connection.executescript(schema)
         elif self.kind in {"postgres", "postgresql"}:
             import psycopg
             self.connection = psycopg.connect(host=self.settings["host"], port=self.settings.get("port", 5432),
@@ -54,12 +60,21 @@ class Database:
     def insert(self, snapshot: dict[str, Any]) -> None:
         placeholder = "?" if self.kind == "sqlite" else "%s"
         query = f"INSERT INTO account_snapshots (id, account_login, server, broker, account_name, balance, equity, open_positions, captured_at, terminal_name) VALUES ({', '.join([placeholder] * 10)})"
-        values = tuple(snapshot.values())
+        positions = snapshot.pop("positions_data", [])
+        values = tuple(snapshot[key] for key in ("id", "account_login", "server", "broker", "account_name", "balance", "equity", "open_positions", "captured_at", "terminal_name"))
         if self.kind == "sqlite":
             self.connection.execute(query, values)
         else:
             with self.connection.cursor() as cursor:
                 cursor.execute(query, values)
+        position_query = f"INSERT INTO position_snapshots (id, account_login, symbol, position_type, volume, price_open, price_current, profit, margin, stop_loss, take_profit, captured_at, terminal_name) VALUES ({', '.join([placeholder] * 13)})"
+        for position in positions:
+            position_values = (time.time_ns(), snapshot["account_login"], position["symbol"], position["type"], position["volume"], position["price_open"], position["price_current"], position["profit"], position["margin"], position["sl"], position["tp"], snapshot["captured_at"], snapshot["terminal_name"])
+            if self.kind == "sqlite":
+                self.connection.execute(position_query, position_values)
+            else:
+                with self.connection.cursor() as cursor:
+                    cursor.execute(position_query, position_values)
         self.connection.commit()
 
     def close(self) -> None:
@@ -96,11 +111,12 @@ def read_terminal(terminal: Terminal) -> dict[str, Any]:
         positions = mt5.positions_get()
         if account is None or positions is None:
             raise RuntimeError(f"lectura MT5 fallo: {mt5.last_error()}")
+        position_data = [{"symbol": str(position.symbol), "type": int(position.type), "volume": float(position.volume), "price_open": float(position.price_open), "price_current": float(position.price_current), "profit": float(position.profit), "margin": float(getattr(position, "margin", 0) or 0), "sl": float(position.sl), "tp": float(position.tp)} for position in positions]
         return {"id": time.time_ns(), "account_login": int(account.login),
                 "server": str(account.server or ""), "broker": str(getattr(account, "company", "") or ""),
                 "account_name": str(getattr(account, "name", "") or ""), "balance": float(account.balance),
                 "equity": float(account.equity), "open_positions": len(positions),
-                "captured_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                "captured_at": datetime.now(timezone.utc).replace(tzinfo=None), "positions_data": position_data,
                 "terminal_name": terminal.name}
     finally:
         mt5.shutdown()
