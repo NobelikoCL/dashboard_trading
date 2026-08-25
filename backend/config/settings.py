@@ -4,7 +4,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'local-villacapital-development-key')
 DEBUG = os.getenv('DJANGO_DEBUG', 'false').lower() == 'true'
-ALLOWED_HOSTS = list({x.strip() for x in os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',') if x.strip()} | {'localhost', '127.0.0.1', 'backend', 'frontend'})
+ALLOWED_HOSTS = list({x.strip() for x in os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',') if x.strip()} | {'localhost', '127.0.0.1', 'backend', 'frontend', '192.168.1.34'})
 INSTALLED_APPS = ['django.contrib.contenttypes', 'django.contrib.staticfiles', 'corsheaders', 'monitor']
 MIDDLEWARE = ['corsheaders.middleware.CorsMiddleware', 'django.middleware.common.CommonMiddleware']
 ROOT_URLCONF = 'config.urls'
